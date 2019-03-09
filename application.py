@@ -27,6 +27,7 @@ def main(argv):
 
     node_list = extract_nodes(f'{workflow_path}/workflow.knime')
     print(node_list)
+    # sys.exit()
 
     connection_list = extract_connections(f'{workflow_path}/workflow.knime')
     print(connection_list)
@@ -36,6 +37,8 @@ def main(argv):
     node1 = extract_from_input_xml(infile1)
     print(node1)
 
+    # sys.exit()
+
     infile2 = f'{workflow_path}/Table To JSON (#2)/settings.xml'
     node2 = extract_from_input_xml(infile2)
     print(node2)
@@ -43,11 +46,13 @@ def main(argv):
     # sys.exit()
 
     workflow_output_path = f'{OUTPUT_PATH}/{workflow_name}'
+
     if not os.path.exists(workflow_output_path):
         os.makedirs(workflow_output_path)
 
     template_tree1 = create_node_xml_from_template(node1)
     save_node_xml(template_tree1, f'{workflow_output_path}/CSV Reader (#1)')
+    # sys.exit()
 
     template_tree2 = create_node_xml_from_template(node2)
     save_node_xml(template_tree2, f'{workflow_output_path}/Table To JSON (#2)')
@@ -55,8 +60,8 @@ def main(argv):
 
     copyfile(f'{workflow_path}/workflow.knime',f'{workflow_output_path}/workflow.knime')
     create_output_workflow(workflow_name)
-    rmtree(f'{workflow_path}')
-    rmtree(f'{OUTPUT_PATH}/{workflow_name}')
+    # rmtree(f'{workflow_path}')
+    # rmtree(f'{OUTPUT_PATH}/{workflow_name}')
 
 if __name__ == "__main__":
     main(sys.argv[1:])

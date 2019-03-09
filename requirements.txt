@@ -1,2 +1,4 @@
+lxml
+bs4
 pytest
 coverage

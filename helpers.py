@@ -1,34 +1,33 @@
 import os, zipfile
 from shutil import make_archive
-import xml.etree.ElementTree as ET
+from bs4 import BeautifulSoup
 
 INPUT_PATH = 'input'
 OUTPUT_PATH = 'output'
 TEMPLATE_PATH = 'templates'
-NS = {'knime': 'http://www.knime.org/2008/09/XMLConfig'}
-ENTRY_TAG = f'{{{NS["knime"]}}}entry'
-CONFIG_TAG = f'{{{NS["knime"]}}}config'
 
 
 # assumes workflow filename == workflow name
-def unzip_workflow(inputfile):
-    zip_ref = zipfile.ZipFile(inputfile, 'r')
+def unzip_workflow(input_file):
+    zip_ref = zipfile.ZipFile(input_file, 'r')
     zip_ref.extractall(INPUT_PATH)
     zip_ref.close()
-    return os.path.splitext(inputfile)[0]
+    return os.path.splitext(input_file)[0]
 
 
 def extract_from_input_xml(input_file):
-    base_tree = ET.parse(input_file)
-    root = base_tree.getroot()
-    node = {}
-    node['name'] = root.find("./knime:entry[@key='name']", NS).attrib['value']
+    with open(input_file, "r") as f:
+        contents = f.read()
+        soup = BeautifulSoup(contents, 'xml')
+    node = dict()
+    node['name'] = soup.find('entry', key='name')['value']
     model = []
-    for child in root.findall("./knime:config[@key='model']/*", NS):
-        if child.tag == ENTRY_TAG:
+
+    for child in soup.find('config', key='model').find_all(['config', 'entry'], recursive=False):
+        if child.name == 'entry':
             entry = extract_entry_tag(child)
             model.append(entry)
-        elif child.tag == CONFIG_TAG:
+        elif child.name == 'config':
             config = extract_config_tag(child)
             model.append(config)
 
@@ -36,34 +35,37 @@ def extract_from_input_xml(input_file):
     return node
 
 
-def extract_entry_tag(tree):
-    entry = {tree.attrib['key']: tree.attrib['value'],
-             'type': tree.attrib['type']}
+def extract_entry_tag(tag):
+    entry = {tag['key']: tag['value'], 'type': tag['type']}
+    if tag.has_attr('isnull'):
+        entry['isnull'] = True
     return entry
 
 
-def extract_config_tag(tree):
+def extract_config_tag(tag):
     config_value = []
-    for child in tree.findall("./*", NS):
-        if child.tag == ENTRY_TAG:
+    for child in tag.children:
+        if child.name == 'entry':
             entry = extract_entry_tag(child)
             config_value.append(entry)
-        elif child.tag == CONFIG_TAG:
+        elif child.name == 'config':
             config = extract_config_tag(child)
             config_value.append(config)
-    config = {tree.attrib['key']: config_value, 'type': 'config'}
+    config = {tag['key']: config_value, 'type': 'config'}
     return config
 
 
 def extract_nodes(input_file):
     node_list = []
-    base_tree = ET.parse(input_file)
-    root = base_tree.getroot()
-    for child in root.findall("./knime:config[@key='nodes']/knime:config", NS):
-        node = {}
-        node_id = child.find("./knime:entry[@key='id']", NS).attrib['value']
+    with open(input_file, "r") as f:
+        contents = f.read()
+        soup = BeautifulSoup(contents, 'xml')
+
+    for child in soup.find('config', key='nodes').find_all('config', recursive=False):
+        node = dict()
+        node_id = child.find('entry', key='id')['value']
         node['id'] = node_id
-        settings_file = child.find("./knime:entry[@key='node_settings_file']", NS).attrib['value']
+        settings_file = child.find('entry', key='node_settings_file')['value']
         node['filename'] = settings_file
         node_list.append(node)
     return node_list
@@ -71,17 +73,19 @@ def extract_nodes(input_file):
 
 def extract_connections(input_file):
     connection_list = []
-    base_tree = ET.parse(input_file)
-    root = base_tree.getroot()
-    for child in root.findall("./knime:config[@key='connections']/knime:config", NS):
-        connection = {}
-        source_id = child.find("./knime:entry[@key='sourceID']", NS).attrib['value']
+    with open(input_file, "r") as f:
+        contents = f.read()
+        soup = BeautifulSoup(contents, 'xml')
+
+    for child in soup.find('config', key='connections').find_all('config', recursive=False):
+        connection = dict()
+        source_id = child.find('entry', key='sourceID')['value']
         connection['source_id'] = source_id
-        dest_id = child.find("./knime:entry[@key='destID']", NS).attrib['value']
+        dest_id = child.find('entry', key='destID')['value']
         connection['dest_id'] = dest_id
-        source_port = child.find("./knime:entry[@key='sourcePort']", NS).attrib['value']
+        source_port = child.find('entry', key='sourcePort')['value']
         connection['source_port'] = source_port
-        dest_port = child.find("./knime:entry[@key='destPort']", NS).attrib['value']
+        dest_port = child.find('entry', key='destPort')['value']
         connection['dest_port'] = dest_port
         connection_list.append(connection)
     return connection_list
@@ -89,10 +93,10 @@ def extract_connections(input_file):
 
 def create_node_xml_from_template(node):
     template = f'{TEMPLATE_PATH}/{node["name"]}/settings_no_model.xml'
-    template_tree = ET.parse(template)
-    template_root = template_tree.getroot()
-    model = template_root.find("./knime:config[@key='model']", NS)
-    # ET.dump(model)
+    with open(template, "r") as f:
+        contents = f.read()
+        soup = BeautifulSoup(contents, 'xml')
+    model = soup.find('config', key='model')
     for curr in node['model']:
         if curr['type'] == 'config':
             config = create_config_element(curr)
@@ -100,22 +104,25 @@ def create_node_xml_from_template(node):
         else:
             entry = create_entry_element(curr)
             model.append(entry)
-    # ET.dump(model)
-    return template_tree
+    return soup
 
 
 def create_entry_element(entry):
+    soup = BeautifulSoup('', 'xml')
     entry_key = list(entry.keys())[0]
     entry_value = entry[entry_key]
     entry_type = entry['type']
-    entry_elt = ET.Element('entry', key=entry_key, type=entry_type, value=entry_value)
+    entry_elt = soup.new_tag('entry', key=entry_key, type=entry_type, value=entry_value)
+    if 'isnull' in entry:
+        entry_elt['isnull'] = 'true'
     return entry_elt
 
 
 def create_config_element(config):
+    soup = BeautifulSoup('', 'xml')
     config_key = list(config.keys())[0]
     config_values = config[config_key]
-    config_elt = ET.Element('config', key=config_key)
+    config_elt = soup.new_tag('config', key=config_key)
     for value in config_values:
         if value['type'] == 'config':
             child_config = create_config_element(value)
@@ -126,12 +133,12 @@ def create_config_element(config):
     return config_elt
 
 
-def save_node_xml(tree, outputpath):
-    if not os.path.exists(outputpath):
-        os.makedirs(outputpath)
+def save_node_xml(tree, output_path):
+    if not os.path.exists(output_path):
+        os.makedirs(output_path)
 
-    ET.register_namespace('', NS['knime'])
-    tree.write(f'{outputpath}/settings.xml', xml_declaration=True, encoding='UTF-8')
+    with open(f'{output_path}/settings.xml', 'w') as file:
+        file.write(tree.prettify())
 
 
 def create_output_workflow(workflow_name):
